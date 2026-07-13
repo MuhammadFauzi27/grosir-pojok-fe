@@ -1,0 +1,770 @@
+openapi: 3.0.3
+info:
+  title: API Sistem Informasi Pengelolaan Kasir dan Gudang - Grosir Pojok
+  description: >
+    Spesifikasi API untuk modul TRANSAKSIONAL Sistem Informasi Pengelolaan Kasir
+    dan Gudang pada Grosir Pojok. Mencakup autentikasi, pengelolaan data master
+    (pegawai, barang), pencatatan transaksi penjualan (POS), dan pengecekan stok
+    real-time.
+
+    Di luar cakupan (bukan bagian dari spesifikasi ini): laporan analitik,
+    dashboard ringkasan pendapatan/statistik, pengelolaan keuangan/akuntansi,
+    metode pembayaran, dan pengiriman barang — sesuai batasan masalah pada
+    dokumen SKPL-001.
+  version: 2.0.0
+servers:
+  - url: https://api.grosirpojok.com/
+    description: Production (cloud)
+  - url: http://localhost:3000/v1
+    description: Local development
+
+tags:
+  - name: Auth
+    description: Autentikasi & manajemen sesi pengguna (Kasir / Gudang)
+  - name: Barang
+    description: Master data barang grosir (termasuk satuan & stok awal)
+  - name: Satuan
+    description: Master satuan barang (read-only, di-seed oleh sistem)
+  - name: Stok
+    description: Pengecekan ketersediaan stok & penyesuaian stok manual
+  - name: Penjualan
+    description: Transaksi penjualan (Point of Sale) dan riwayat transaksi
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ============================================================
+  # AUTH
+  # ============================================================
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login pengguna (Kasir / Gudang)
+      description: >
+        Memvalidasi username & password, mengembalikan token akses dengan
+        role terkait (kasir atau gudang) untuk membatasi hak akses fitur.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, role]
+              properties:
+                username:
+                  type: string
+                  example: kasir01
+                password:
+                  type: string
+                  format: password
+                  example: password123
+                role:
+                  type: string
+                  example: kasir
+      responses:
+        '200':
+          description: Login berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT access token
+                  pegawai:
+                    $ref: '#/components/schemas/Pegawai'
+        '401':
+          description: Username atau password atau peran salah
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout pengguna
+      description: Mengakhiri sesi/menonaktifkan token yang sedang dipakai.
+      responses:
+        '204':
+          description: Logout berhasil, tidak ada konten
+        '401':
+          description: Token tidak valid / sudah kedaluwarsa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ============================================================
+  # SATUAN (Master, read-only)
+  # ============================================================
+  /satuan:
+    get:
+      tags: [Satuan]
+      summary: Daftar master satuan barang
+      description: >
+        Mengembalikan seluruh satuan yang di-seed oleh sistem (pcs, kg, liter,
+        dll.). Satuan bersifat tetap dan tidak dapat ditambah/diubah/dihapus
+        melalui API.
+      responses:
+        '200':
+          description: Daftar master satuan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SatuanBarang'
+
+  # ============================================================
+  # BARANG
+  # ============================================================
+  /barang/form-data:
+    get:
+      tags: [Barang]
+      summary: Data untuk form tambah barang
+      description: >
+        Mengembalikan daftar kategori yang sudah ada dan daftar master satuan
+        dalam satu request. Dipanggil oleh frontend sebelum membuka form
+        tambah barang agar dropdown kategori & satuan dapat diisi.
+      responses:
+        '200':
+          description: Data form berhasil diambil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      kategori:
+                        type: array
+                        description: Daftar kategori unik dari barang yang sudah ada
+                        items:
+                          type: string
+                        example: ['Mie Instan', 'Minyak Goreng', 'Sembako']
+                      satuan:
+                        type: array
+                        description: Daftar master satuan (seed)
+                        items:
+                          $ref: '#/components/schemas/SatuanBarang'
+
+  /barang:
+    get:
+      tags: [Barang]
+      summary: Daftar master barang
+      description: >
+        Mengembalikan daftar barang lengkap dengan nama_satuan dan jumlah_stok.
+        Mendukung pencarian nama barang dan filter kategori.
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Cari berdasarkan nama barang (case-insensitive, partial match)
+          example: indomie
+        - name: kategori
+          in: query
+          schema:
+            type: string
+          description: Filter berdasarkan kategori (exact match)
+          example: Mie Instan
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Daftar barang
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Barang'
+    post:
+      tags: [Barang]
+      summary: Tambah barang baru sekaligus stok awal (hak akses Gudang)
+      description: >
+        Membuat satu baris barang baru. Satuan dicocokkan berdasarkan nama ke
+        tabel master (case-insensitive). Stok awal langsung dicatat secara
+        atomik dalam satu transaksi DB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BarangInput'
+      responses:
+        '201':
+          description: Barang berhasil ditambahkan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Barang'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /barang/{id_barang}:
+    parameters:
+      - name: id_barang
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Barang]
+      summary: Detail barang
+      description: Mengembalikan satu barang lengkap dengan nama_satuan dan jumlah_stok.
+      responses:
+        '200':
+          description: Detail barang
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Barang'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Barang]
+      summary: Perbarui data barang (hak akses Gudang)
+      description: >
+        Memperbarui nama_barang, kategori, dan/atau harga_barang.
+        Satuan tidak dapat diubah setelah barang dibuat.
+        Field yang tidak dikirim dipertahankan nilainya.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BarangUpdateInput'
+      responses:
+        '200':
+          description: Barang berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Barang'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [Barang]
+      summary: Hapus barang (hak akses Gudang)
+      description: >
+        Menghapus barang. Baris stok ikut terhapus otomatis (CASCADE).
+        Gagal dengan 409 jika barang masih memiliki riwayat transaksi.
+      responses:
+        '204':
+          description: Barang berhasil dihapus
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Tidak dapat dihapus karena masih ada riwayat transaksi (FK RESTRICT)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================
+  # STOK
+  # ============================================================
+  /stok/{id_barang}/penyesuaian:
+    parameters:
+      - name: id_barang
+        in: path
+        required: true
+        schema:
+          type: integer
+    patch:
+      tags: [Stok]
+      summary: Penyesuaian stok manual per barang (barang masuk / stock opname)
+      description: >
+        Digunakan pegawai gudang untuk menambah/mengoreksi stok fisik di luar
+        alur transaksi penjualan (mis. penerimaan barang masuk baru).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [perubahan]
+              properties:
+                perubahan:
+                  type: integer
+                  description: Nilai positif untuk menambah stok, negatif untuk mengurangi
+                  example: 50
+      responses:
+        '200':
+          description: Stok berhasil disesuaikan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id_barang:
+                    type: integer
+                  jumlah_stok:
+                    type: integer
+        '400':
+          description: Hasil penyesuaian membuat stok menjadi negatif (melanggar CHECK jumlah_stok >= 0)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /stok:
+    get:
+      tags: [Stok]
+      summary: Cek ketersediaan stok terkini
+      description: >
+        Menampilkan gabungan data barang dan stok untuk digunakan kasir saat
+        transaksi dan gudang saat memantau persediaan secara real-time.
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Cari berdasarkan nama barang atau kode SKU
+        - name: kategori
+          in: query
+          schema:
+            type: string
+        - name: stok_menipis
+          in: query
+          schema:
+            type: boolean
+          description: Jika true, hanya tampilkan barang dengan stok di bawah ambang batas minimum
+      responses:
+        '200':
+          description: Daftar stok terkini
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StokBarang'
+
+  # ============================================================
+  # PENJUALAN (Transaksi POS)
+  # ============================================================
+  /penjualan:
+    get:
+      tags: [Penjualan]
+      summary: Daftar riwayat transaksi penjualan
+      description: >
+        Menampilkan daftar nota penjualan (header). Untuk rincian item per
+        nota, gunakan endpoint /penjualan/{no_nota_jual}.
+      parameters:
+        - name: id_pegawai
+          in: query
+          schema:
+            type: integer
+          description: Filter berdasarkan kasir yang memproses transaksi
+        - name: tanggal_mulai
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: tanggal_selesai
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Daftar transaksi penjualan
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PenjualanSummary'
+
+    post:
+      tags: [Penjualan]
+      summary: Catat transaksi penjualan baru (checkout kasir)
+      description: >
+        Membuat satu nota penjualan beserta seluruh item detailnya secara
+        atomik (header `penjualan` + baris `detail_penjualan`). Setiap baris
+        detail yang berhasil disimpan akan otomatis memicu pemotongan
+        `stok` melalui trigger `trg_potong_stok`. Jika stok salah satu
+        item tidak mencukupi, seluruh transaksi dibatalkan (rollback) dan
+        tidak ada stok yang berubah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PenjualanInput'
+      responses:
+        '201':
+          description: Transaksi berhasil dicatat, stok otomatis terpotong
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PenjualanDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: >
+            Stok tidak mencukupi untuk salah satu item (dilempar oleh trigger
+            fn_potong_stok), transaksi dibatalkan seluruhnya
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /penjualan/{no_nota}:
+    parameters:
+      - name: no_nota
+        in: path
+        required: true
+        schema:
+          type: string
+          example: TRX-20260701-001
+    get:
+      tags: [Penjualan]
+      summary: Detail satu nota penjualan beserta rincian item
+      responses:
+        '200':
+          description: Detail transaksi penjualan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PenjualanDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /penjualan/{no_nota}/nota:
+    parameters:
+      - name: no_nota
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Penjualan]
+      summary: Ambil data nota untuk dicetak (struk thermal)
+      description: Mengembalikan data terformat siap cetak untuk printer thermal kasir.
+      responses:
+        '200':
+          description: Data nota penjualan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PenjualanDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Token didapat dari /auth/login. Payload token memuat id_pegawai dan
+        role (kasir/gudang) untuk otorisasi endpoint.
+
+  responses:
+    BadRequest:
+      description: Input tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Data tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Role pengguna tidak memiliki hak akses untuk operasi ini
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    # ---------------- PEGAWAI ----------------
+    Pegawai:
+      type: object
+      properties:
+        id_pegawai:
+          type: integer
+        nama:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          enum: [kasir, gudang]
+        created_at:
+          type: string
+          format: date-time
+
+    PegawaiInput:
+      type: object
+      required: [nama, username, password, role]
+      properties:
+        nama:
+          type: string
+          example: Budi Santoso
+        username:
+          type: string
+          example: kasir01
+        password:
+          type: string
+          format: password
+        role:
+          type: string
+          enum: [kasir, gudang]
+
+    # ---------------- SATUAN BARANG (Master) ----------------
+    SatuanBarang:
+      type: object
+      description: Master satuan barang (seed-only, tidak dapat diubah via API)
+      properties:
+        id_satuan:
+          type: integer
+          example: 1
+        nama_satuan:
+          type: string
+          example: pcs
+
+    # ---------------- BARANG ----------------
+    Barang:
+      type: object
+      description: Data barang lengkap dengan satuan dan stok
+      properties:
+        id_barang:
+          type: integer
+          example: 1
+        nama_barang:
+          type: string
+          example: Indomie Goreng Dus
+        kategori:
+          type: string
+          example: Mie Instan
+        harga_barang:
+          type: number
+          format: double
+          example: 42000
+        id_satuan:
+          type: integer
+          example: 3
+        nama_satuan:
+          type: string
+          example: dus
+        jumlah_stok:
+          type: integer
+          example: 500
+        created_at:
+          type: string
+          format: date-time
+
+    BarangInput:
+      type: object
+      required: [nama_barang, kategori, harga_barang, nama_satuan, jumlah_stok]
+      properties:
+        nama_barang:
+          type: string
+          example: Indomie Goreng Dus
+        kategori:
+          type: string
+          example: Mie Instan
+        harga_barang:
+          type: number
+          format: double
+          minimum: 0
+          example: 42000
+        nama_satuan:
+          type: string
+          description: >
+            Nama satuan dari daftar master (case-insensitive). Gunakan
+            GET /barang/form-data atau GET /satuan untuk mendapatkan daftar
+            satuan yang valid.
+          example: dus
+        jumlah_stok:
+          type: integer
+          minimum: 0
+          description: Stok awal barang saat pertama kali didaftarkan
+          example: 500
+
+    BarangUpdateInput:
+      type: object
+      description: Minimal satu field harus dikirim. Satuan tidak dapat diubah.
+      properties:
+        nama_barang:
+          type: string
+          example: Indomie Goreng Dus Baru
+        kategori:
+          type: string
+          example: Mie Instan
+        harga_barang:
+          type: number
+          format: double
+          minimum: 0
+          example: 44000
+
+    # ---------------- STOK (view) ----------------
+    StokBarang:
+      type: object
+      description: Data stok real-time per barang
+      properties:
+        id_barang:
+          type: integer
+        nama_barang:
+          type: string
+        kategori:
+          type: string
+        nama_satuan:
+          type: string
+        harga_barang:
+          type: number
+          format: double
+        jumlah_stok:
+          type: integer
+
+    # ---------------- PENJUALAN ----------------
+    PenjualanItemInput:
+      type: object
+      required: [id_barang, jumlah_per_barang]
+      properties:
+        id_barang:
+          type: integer
+          description: Referensi ke barang yang dijual
+        jumlah_per_barang:
+          type: integer
+          minimum: 1
+          description: Jumlah unit yang dibeli, harus > 0
+
+    PenjualanInput:
+      type: object
+      required: [username, items]
+      properties:
+        no_nota:
+          type: string
+          description: >
+            Opsional. Jika tidak dikirim, server men-generate otomatis
+            (format: TRX-YYYYMMDD-NNN)
+          example: TRX-20260706-001
+        username:
+          type: string
+          description: Username kasir yang memproses transaksi
+        items:
+          type: array
+          minItems: 1
+          description: Daftar item transaksi.
+          items:
+            $ref: '#/components/schemas/PenjualanItemInput'
+
+    DetailPenjualan:
+      type: object
+      properties:
+        id_detail_jual:
+          type: integer
+        no_nota_jual:
+          type: string
+        id_barang:
+          type: integer
+        nama_barang:
+          type: string
+        nama_satuan:
+          type: string
+        jumlah_jual:
+          type: integer
+        subtotal_jual:
+          type: number
+          format: double
+
+    PenjualanSummary:
+      type: object
+      properties:
+        no_nota_jual:
+          type: string
+        tanggal_jual:
+          type: string
+          format: date-time
+        id_pegawai:
+          type: integer
+        nama_kasir:
+          type: string
+        total_nota:
+          type: number
+          format: double
+          description: Jumlah seluruh subtotal_jual pada nota ini
+
+    PenjualanDetail:
+      type: object
+      properties:
+        no_nota_jual:
+          type: string
+        tanggal_jual:
+          type: string
+          format: date-time
+        id_pegawai:
+          type: integer
+        nama_kasir:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DetailPenjualan'
+        total_nota:
+          type: number
+          format: double
