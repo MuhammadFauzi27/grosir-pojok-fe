@@ -1,31 +1,89 @@
 import React, { useState } from 'react';
+// Import useNavigate untuk perpindahan halaman
+import { useNavigate } from 'react-router-dom';
 
 export const LoginPage = () => {
-  // State UI murni untuk efek transisi tombol saat diklik
+  const navigate = useNavigate();
+
+  // State untuk UI dan Form Data
   const [role, setRole] = useState('kasir');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  
+  // State untuk status API
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Fungsi untuk menembak API Login
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    
+    // Validasi kosong
+    if (!username || !password) {
+      setErrorMsg('ID Pengguna dan Kata Sandi wajib diisi!');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg('');
+
+    try {
+      // Ganti URL ini dengan Base URL API yang sebenarnya dari backend kalian
+      const response = await fetch('http://localhost:5000/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: username,
+          password: password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Simpan token akses ke localStorage agar sesi pengguna tidak hilang
+        localStorage.setItem('accessToken', data.token);
+        
+        // Opsional: Kamu juga bisa menyimpan data pegawai jika diperlukan nanti
+        // localStorage.setItem('userData', JSON.stringify(data.pegawai));
+
+        // Navigasi sesuai dengan role UI yang dipilih
+        if (role === 'kasir') {
+          navigate('/kasir');
+        } else if (role === 'gudang') {
+          navigate('/gudang');
+        }
+      } else {
+        // Tangani error 401 Unauthorized atau error lainnya dari API
+        setErrorMsg(data.message || 'Username atau password salah!');
+      }
+    } catch (error) {
+      // Tangani error jika server mati atau koneksi terputus
+      setErrorMsg('Gagal terhubung ke server. Silakan coba lagi.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      {/* Container Utama / Card Login */}
       <div className="bg-white rounded-xl shadow-lg w-full max-w-sm overflow-hidden border border-gray-100">
         
-        {/* Garis Aksen Biru di atas Card */}
         <div className="h-2 bg-[#0b2154] w-full"></div>
 
         <div className="p-6 sm:p-8">
-          {/* Header */}
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-[#0b2154] mb-1">Grosir Pojok</h1>
             <p className="text-gray-500 text-sm">Sistem Informasi Internal</p>
           </div>
 
-          {/* Pemilihan Peran (Role) */}
           <div className="mb-6">
             <label className="block text-xs font-bold text-gray-800 tracking-wider mb-3 uppercase">
               Pilih Peran
             </label>
             <div className="flex gap-4">
-              {/* Tombol Kasir */}
               <button
                 type="button"
                 onClick={() => setRole('kasir')}
@@ -35,7 +93,6 @@ export const LoginPage = () => {
                     : 'border-gray-200 text-gray-500 hover:border-gray-300'
                 }`}
               >
-                {/* SVG Ikon Kalkulator (Hardcoded) */}
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect width="16" height="20" x="4" y="2" rx="2" />
                   <line x1="8" x2="16" y1="6" y2="6" />
@@ -47,7 +104,6 @@ export const LoginPage = () => {
                 <span className="font-semibold text-sm">Kasir</span>
               </button>
 
-              {/* Tombol Pegawai Gudang */}
               <button
                 type="button"
                 onClick={() => setRole('gudang')}
@@ -57,7 +113,6 @@ export const LoginPage = () => {
                     : 'border-gray-200 text-gray-500 hover:border-gray-300'
                 }`}
               >
-                {/* SVG Ikon Kardus/Box (Hardcoded) */}
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
                   <path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" />
@@ -69,66 +124,78 @@ export const LoginPage = () => {
             </div>
           </div>
 
-          {/* Form Login */}
-          <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+          {/* Form dipasangkan dengan fungsi handleLogin */}
+          <form className="space-y-5" onSubmit={handleLogin}>
             
-            {/* Input ID Pengguna */}
             <div>
               <label className="block text-xs font-bold text-gray-800 tracking-wider mb-2 uppercase">
                 ID Pengguna
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  {/* SVG Ikon User */}
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
                     <circle cx="12" cy="7" r="4" />
                   </svg>
                 </div>
+                {/* Input terhubung ke state username */}
                 <input
                   type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   placeholder="Masukkan ID Anda"
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0b2154] focus:border-[#0b2154] text-sm transition-colors"
                 />
               </div>
             </div>
 
-            {/* Input Kata Sandi */}
             <div>
               <label className="block text-xs font-bold text-gray-800 tracking-wider mb-2 uppercase">
                 Kata Sandi
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  {/* SVG Ikon Gembok */}
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                   </svg>
                 </div>
+                {/* Input terhubung ke state password */}
                 <input
                   type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0b2154] focus:border-[#0b2154] text-sm transition-colors"
                 />
               </div>
             </div>
 
-            {/* Tombol Masuk */}
+            {/* Area untuk menampilkan pesan error */}
+            {errorMsg && (
+              <div className="text-red-500 text-xs text-center font-medium bg-red-50 py-2 rounded-md border border-red-100">
+                {errorMsg}
+              </div>
+            )}
+
+            {/* Tombol dimatikan (disabled) saat API sedang loading */}
             <button
               type="submit"
-              className="w-full bg-[#0b2154] text-white py-3.5 rounded-md font-semibold mt-2 flex items-center justify-center gap-2 hover:bg-blue-900 transition-colors shadow-sm"
+              disabled={isLoading}
+              className={`w-full text-white py-3.5 rounded-md font-semibold mt-2 flex items-center justify-center gap-2 transition-colors shadow-sm ${
+                isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#0b2154] hover:bg-blue-900'
+              }`}
             >
-              Masuk Sistem 
-              {/* SVG Ikon Panah */}
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14" />
-                <path d="m12 5 7 7-7 7" />
-              </svg>
+              {isLoading ? 'Memproses...' : 'Masuk Sistem'}
+              {!isLoading && (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              )}
             </button>
           </form>
 
-          {/* Footer */}
           <div className="mt-8 text-center">
             <p className="text-xs text-gray-500">
               Versi 2.4.1 • <span className="font-bold text-[#0b2154] cursor-pointer hover:underline">Bantuan Teknis</span>
