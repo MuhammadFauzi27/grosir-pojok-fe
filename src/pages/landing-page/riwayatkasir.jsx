@@ -29,27 +29,8 @@ export const RiwayatKasirPage = () => {
       </div>
 
       {/* Statistik Cards */}
-      <div className="p-5 space-y-4">
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-          <p className="text-xs text-gray-500 font-bold uppercase mb-1">Total Transaksi Hari Ini</p>
-          <div className="flex items-end gap-2">
-            <h2 className="text-2xl font-bold text-gray-900">142</h2>
-            <span className="text-xs font-bold text-green-600 mb-1">↗ +12%</span>
-          </div>
-        </div>
+      <div className="p-2 space-y-2">
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-            <p className="text-xs text-gray-500 font-bold uppercase mb-1">Pendapatan Hari Ini</p>
-            <h2 className="text-lg font-bold text-gray-900">Rp 45.2M</h2>
-            <span className="text-[10px] font-bold text-green-600">↗ +5%</span>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-            <p className="text-xs text-gray-500 font-bold uppercase mb-1">Barang Terjual</p>
-            <h2 className="text-lg font-bold text-gray-900">2,841</h2>
-            <span className="text-[10px] text-gray-400">unit</span>
-          </div>
-        </div>
       </div>
 
       {/* Filter Bar */}
