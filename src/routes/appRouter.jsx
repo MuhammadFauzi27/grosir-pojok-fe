@@ -15,7 +15,7 @@ export const AppRouter = () => {
         <Route path="/gudang" element={< GudangPage />} />
         <Route path="/tambah-barang" element={< TambahBarangPage />} />
         <Route path="/kasir" element={< KasirPage />} />
-        <Route path="/nota-kasir" element={< NotaKasirPage />} />
+        <Route path="/nota-kasir/:no_nota" element={< NotaKasirPage />} />
         <Route path="/riwayat-kasir" element={< RiwayatKasirPage />} />
       </Routes>
     </BrowserRouter>

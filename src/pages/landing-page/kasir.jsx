@@ -197,7 +197,8 @@ export const KasirPage = () => {
       const response = await api.post('/penjualan', payload);
 
       setCartItems([]);
-      navigate('/nota-kasir', { state: { penjualan: response.data } });
+      const noNota = response.data?.no_nota_jual;
+      navigate(`/nota-kasir/${noNota}`, { state: { penjualan: response.data } });
     } catch (error) {
       console.error('Gagal memproses transaksi:', error);
       if (error.response && error.response.data && error.response.data.message) {
