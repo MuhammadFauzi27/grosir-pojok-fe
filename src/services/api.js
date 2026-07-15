@@ -2,7 +2,7 @@ import axios from "axios";
 
 // 1. Inisialisasi Axios Instance dengan Base URL Backend
 const api = axios.create({
-  baseURL: "http://localhost:3000/v1", // URL backend lokal dari API Contract
+  baseURL: "https://grosir-pojok-be.vercel.app/v1", // URL backend lokal dari API Contract
   headers: {
     "Content-Type": "application/json",
   },
